@@ -4,6 +4,13 @@
 
 #include <linux/types.h>
 
+/* Android's libc provides this POSIX type in <sched.h>. */
+#if defined(__KERNEL__) || !defined(__ANDROID__)
+struct sched_param {
+	int sched_priority;
+};
+#endif
+
 #define SCHED_ATTR_SIZE_VER0	48	/* sizeof first published struct */
 #define SCHED_ATTR_SIZE_VER1	56	/* add: util_{min,max} */
 

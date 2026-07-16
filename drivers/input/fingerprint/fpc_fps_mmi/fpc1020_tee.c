@@ -12,6 +12,7 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
+#include <linux/fps_notifier.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -19,7 +20,6 @@
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
 #include <linux/platform_device.h>
-#include <linux/notifier.h>
 
 #define RESET_LOW_SLEEP_MIN_US 5000
 #define RESET_LOW_SLEEP_MAX_US (RESET_LOW_SLEEP_MIN_US + 100)
@@ -27,94 +27,6 @@
 #define RESET_HIGH_SLEEP1_MAX_US (RESET_HIGH_SLEEP1_MIN_US + 100)
 #define RESET_HIGH_SLEEP2_MIN_US 5000
 #define RESET_HIGH_SLEEP2_MAX_US (RESET_HIGH_SLEEP2_MIN_US + 100)
-
-struct FPS_data {
-	unsigned int enabled;
-	unsigned int state;
-	struct blocking_notifier_head nhead;
-} *fpsData;
-
-struct FPS_data *FPS_init(struct device *dev)
-{
-	struct FPS_data *mdata = devm_kzalloc(dev,
-			sizeof(struct FPS_data), GFP_KERNEL);
-	if (mdata) {
-		BLOCKING_INIT_NOTIFIER_HEAD(&mdata->nhead);
-		pr_debug("%s: FPS notifier data structure init-ed\n", __func__);
-	}
-	return mdata;
-}
-
-int FPS_register_notifier(struct notifier_block *nb,
-	unsigned long stype, bool report)
-{
-	int error;
-	struct FPS_data *mdata = fpsData;
-
-	if (!mdata)
-		return -ENODEV;
-
-	mdata->enabled = (unsigned int)stype;
-	pr_info("%s: FPS sensor %lu notifier enabled\n", __func__, stype);
-
-	error = blocking_notifier_chain_register(&mdata->nhead, nb);
-	if (!error && report) {
-		int state = mdata->state;
-		/* send current FPS state on register request */
-		blocking_notifier_call_chain(&mdata->nhead,
-				stype, (void *)&state);
-		pr_debug("%s: FPS reported state %d\n", __func__, state);
-	}
-	return error;
-}
-EXPORT_SYMBOL_GPL(FPS_register_notifier);
-
-int FPS_unregister_notifier(struct notifier_block *nb,
-		unsigned long stype)
-{
-	int error;
-	struct FPS_data *mdata = fpsData;
-
-	if (!mdata)
-		return -ENODEV;
-
-	error = blocking_notifier_chain_unregister(&mdata->nhead, nb);
-	pr_debug("%s: FPS sensor %lu notifier unregister\n", __func__, stype);
-
-	if (!mdata->nhead.head) {
-		mdata->enabled = 0;
-		pr_info("%s: FPS sensor %lu no clients\n", __func__, stype);
-	}
-
-	return error;
-}
-EXPORT_SYMBOL_GPL(FPS_unregister_notifier);
-
-void FPS_notify(unsigned long stype, int state)
-{
-	struct FPS_data *mdata = fpsData;
-
-	pr_debug("%s: Enter", __func__);
-
-	if (!mdata) {
-		pr_err("%s: FPS notifier not initialized yet\n", __func__);
-		return;
-	} else if (!mdata->enabled) {
-		pr_debug("%s: !mdata->enabled", __func__);
-		return;
-	}
-
-	pr_debug("%s: FPS current state %d -> (0x%x)\n", __func__,
-	       mdata->state, state);
-
-	if (mdata->state != state) {
-		mdata->state = state;
-		blocking_notifier_call_chain(&mdata->nhead,
-					     stype, (void *)&state);
-		pr_debug("%s: FPS notification sent\n", __func__);
-	} else
-		pr_warn("%s: mdata->state==state", __func__);
-}
 
 struct fpc1020_data {
 	struct device *dev;
@@ -346,8 +258,6 @@ static int fpc1020_probe(struct platform_device *pdev)
 		goto exit;
 	}
 
-	fpsData = FPS_init(dev);
-
 	fpc1020->dev = dev;
 	dev_set_drvdata(dev, fpc1020);
 	fpc1020->pdev = pdev;
@@ -360,9 +270,13 @@ static int fpc1020_probe(struct platform_device *pdev)
 
 	rc = fpc1020_request_named_gpio(fpc1020, "irq",
 			&fpc1020->irq_gpio);
-	gpio_direction_input(fpc1020->irq_gpio);
 	if (rc)
 		goto exit;
+	rc = gpio_direction_input(fpc1020->irq_gpio);
+	if (rc) {
+		dev_err(dev, "cannot set irq pin direction\n");
+		goto exit;
+	}
 
 	rc = fpc1020_request_named_gpio(fpc1020, "rst",
 			&fpc1020->rst_gpio);
