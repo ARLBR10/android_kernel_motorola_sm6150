@@ -49,6 +49,32 @@
 
 #define DWC3_DEFAULT_AUTOSUSPEND_DELAY	5000 /* ms */
 
+static void (*notify_event)(struct dwc3 *, unsigned int, unsigned int);
+
+void dwc3_usb3_phy_suspend(struct dwc3 *dwc, int suspend)
+{
+	u32 reg;
+
+	if (dwc->dis_u3_susphy_quirk)
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
+	if (suspend)
+		reg |= DWC3_GUSB3PIPECTL_SUSPHY;
+	else
+		reg &= ~DWC3_GUSB3PIPECTL_SUSPHY;
+	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
+
+	if (dwc->dual_port) {
+		reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(1));
+		if (suspend)
+			reg |= DWC3_GUSB3PIPECTL_SUSPHY;
+		else
+			reg &= ~DWC3_GUSB3PIPECTL_SUSPHY;
+		dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(1), reg);
+	}
+}
+
 /**
  * dwc3_get_dr_mode - Validates and sets dr_mode
  * @dwc: pointer to our context structure
@@ -111,6 +137,33 @@ void dwc3_set_prtcap(struct dwc3 *dwc, u32 mode)
 	reg &= ~(DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_OTG));
 	reg |= DWC3_GCTL_PRTCAPDIR(mode);
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
+}
+
+void dwc3_en_sleep_mode(struct dwc3 *dwc)
+{
+	u32 reg;
+
+	if (dwc->dis_enblslpm_quirk)
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+	reg |= DWC3_GUSB2PHYCFG_ENBLSLPM;
+	dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
+
+	if (dwc->dual_port) {
+		reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(1));
+		reg |= DWC3_GUSB2PHYCFG_ENBLSLPM;
+		dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(1), reg);
+	}
+}
+
+void dwc3_dis_sleep_mode(struct dwc3 *dwc)
+{
+	u32 reg;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+	reg &= ~DWC3_GUSB2PHYCFG_ENBLSLPM;
+	dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
 }
 
 static void __dwc3_set_mode(struct work_struct *work)
@@ -1191,6 +1244,24 @@ static void dwc3_check_params(struct dwc3 *dwc)
 		break;
 	}
 }
+
+void dwc3_set_notifier(void (*notify)(struct dwc3 *, unsigned int,
+					      unsigned int))
+{
+	notify_event = notify;
+}
+EXPORT_SYMBOL(dwc3_set_notifier);
+
+int dwc3_notify_event(struct dwc3 *dwc, unsigned int event, unsigned int value)
+{
+	if (notify_event) {
+		notify_event(dwc, event, value);
+		return 0;
+	}
+
+	return -ENODEV;
+}
+EXPORT_SYMBOL(dwc3_notify_event);
 
 static int dwc3_probe(struct platform_device *pdev)
 {

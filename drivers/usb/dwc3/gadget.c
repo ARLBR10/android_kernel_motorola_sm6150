@@ -174,6 +174,59 @@ void dwc3_ep_inc_deq(struct dwc3_ep *dep)
 	dwc3_ep_inc_trb(&dep->trb_dequeue);
 }
 
+int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc, struct dwc3_ep *dep)
+{
+	int fifo_size, mdwidth, max_packet = 1024;
+	int tmp, mult = 1, fifo_0_start;
+
+	if (!dwc->needs_fifo_resize || !dwc->tx_fifo_size)
+		return 0;
+	if (!usb_endpoint_dir_in(dep->endpoint.desc) ||
+	    dep->endpoint.ep_num == 0)
+		return 0;
+	if (dep->fifo_depth)
+		return 0;
+
+	mdwidth = DWC3_MDWIDTH(dwc->hwparams.hwparams0) >> 3;
+	if (((dep->endpoint.maxburst > 1) &&
+	     usb_endpoint_xfer_bulk(dep->endpoint.desc)) ||
+	    usb_endpoint_xfer_isoc(dep->endpoint.desc))
+		mult = 3;
+	if ((dep->endpoint.maxburst > 6) &&
+	    (usb_endpoint_xfer_bulk(dep->endpoint.desc) && dwc3_is_usb31(dwc) ||
+	     usb_endpoint_xfer_isoc(dep->endpoint.desc)))
+		mult = 6;
+
+	tmp = ((max_packet + mdwidth) * mult) + mdwidth;
+	fifo_size = DIV_ROUND_UP(tmp, mdwidth);
+	dep->fifo_depth = fifo_size;
+	tmp = dwc3_readl(dwc->regs, DWC3_GTXFIFOSIZ(0));
+	fifo_0_start = DWC3_GTXFIFOSIZ_TXFSTADDR(tmp);
+	fifo_size |= fifo_0_start + (dwc->last_fifo_depth << 16);
+	if (dwc3_is_usb31(dwc))
+		dwc->last_fifo_depth += DWC31_GTXFIFOSIZ_TXFDEF(fifo_size);
+	else
+		dwc->last_fifo_depth += DWC3_GTXFIFOSIZ_TXFDEF(fifo_size);
+
+	if ((dwc->last_fifo_depth * mdwidth) >= dwc->tx_fifo_size) {
+		if (dwc3_is_usb31(dwc))
+			fifo_size = DWC31_GTXFIFOSIZ_TXFDEF(fifo_size);
+		else
+			fifo_size = DWC3_GTXFIFOSIZ_TXFDEF(fifo_size);
+		dwc->last_fifo_depth -= fifo_size;
+		dep->fifo_depth = 0;
+		return -ENOMEM;
+	}
+
+	if (dwc->revision == DWC3_USB31_REVISION_170A &&
+	    dwc->versiontype == DWC3_USB31_VER_TYPE_EA06 &&
+	    usb_endpoint_xfer_isoc(dep->endpoint.desc))
+		fifo_size |= DWC31_GTXFIFOSIZ_TXFRAMNUM;
+
+	dwc3_writel(dwc->regs, DWC3_GTXFIFOSIZ(dep->endpoint.ep_num), fifo_size);
+	return 0;
+}
+
 void dwc3_gadget_del_and_unmap_request(struct dwc3_ep *dep,
 		struct dwc3_request *req, int status)
 {
