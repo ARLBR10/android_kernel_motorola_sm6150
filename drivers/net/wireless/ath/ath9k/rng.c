@@ -97,7 +97,7 @@ static int ath9k_rng_kthread(void *data)
 
 		/* sleep until entropy bits under write_wakeup_threshold */
 		add_hwgenerator_randomness((void *)rng_buf, bytes_read,
-					   ATH9K_RNG_ENTROPY(bytes_read));
+					   ATH9K_RNG_ENTROPY(bytes_read), true);
 	}
 
 	kfree(rng_buf);
