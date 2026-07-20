@@ -160,7 +160,7 @@ static void dwc3_ep_inc_trb(u8 *index)
  * dwc3_ep_inc_enq - increment endpoint's enqueue pointer
  * @dep: The endpoint whose enqueue pointer we're incrementing
  */
-static void dwc3_ep_inc_enq(struct dwc3_ep *dep)
+void dwc3_ep_inc_enq(struct dwc3_ep *dep)
 {
 	dwc3_ep_inc_trb(&dep->trb_enqueue);
 }
@@ -169,7 +169,7 @@ static void dwc3_ep_inc_enq(struct dwc3_ep *dep)
  * dwc3_ep_inc_deq - increment endpoint's dequeue pointer
  * @dep: The endpoint whose enqueue pointer we're incrementing
  */
-static void dwc3_ep_inc_deq(struct dwc3_ep *dep)
+void dwc3_ep_inc_deq(struct dwc3_ep *dep)
 {
 	dwc3_ep_inc_trb(&dep->trb_dequeue);
 }
@@ -433,14 +433,6 @@ static int dwc3_send_clear_stall_ep_cmd(struct dwc3_ep *dep)
 	memset(&params, 0, sizeof(params));
 
 	return dwc3_send_gadget_ep_cmd(dep, cmd, &params);
-}
-
-static dma_addr_t dwc3_trb_dma_offset(struct dwc3_ep *dep,
-		struct dwc3_trb *trb)
-{
-	u32		offset = (char *) trb - (char *) dep->trb_pool;
-
-	return dep->trb_pool_dma + offset;
 }
 
 static int dwc3_alloc_trb_pool(struct dwc3_ep *dep)
@@ -736,7 +728,7 @@ out:
 	return 0;
 }
 
-static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force);
+void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force);
 static void dwc3_remove_requests(struct dwc3 *dwc, struct dwc3_ep *dep)
 {
 	struct dwc3_request		*req;
@@ -1847,13 +1839,13 @@ static void dwc3_gadget_enable_irq(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DEVTEN, reg);
 }
 
-static void dwc3_gadget_disable_irq(struct dwc3 *dwc)
+void dwc3_gadget_disable_irq(struct dwc3 *dwc)
 {
 	/* mask all interrupts */
 	dwc3_writel(dwc->regs, DWC3_DEVTEN, 0x00);
 }
 
-static irqreturn_t dwc3_interrupt(int irq, void *_dwc);
+irqreturn_t dwc3_interrupt(int irq, void *_dwc);
 static irqreturn_t dwc3_thread_interrupt(int irq, void *_dwc);
 
 /**
@@ -2604,7 +2596,7 @@ static void dwc3_reset_gadget(struct dwc3 *dwc)
 	}
 }
 
-static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force)
+void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force)
 {
 	struct dwc3_ep *dep;
 	struct dwc3_gadget_ep_cmd_params params;
@@ -3209,7 +3201,7 @@ static irqreturn_t dwc3_check_event_buf(struct dwc3_event_buffer *evt)
 	return IRQ_WAKE_THREAD;
 }
 
-static irqreturn_t dwc3_interrupt(int irq, void *_evt)
+irqreturn_t dwc3_interrupt(int irq, void *_evt)
 {
 	struct dwc3_event_buffer	*evt = _evt;
 
