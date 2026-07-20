@@ -413,7 +413,7 @@ static int hwrng_fillfn(void *unused)
 		}
 		/* Outside lock, sure, but y'know: randomness. */
 		add_hwgenerator_randomness((void *)rng_fillbuf, rc,
-					   rc * current_quality * 8 >> 10);
+					   rc * current_quality * 8 >> 10, true);
 	}
 	hwrng_fill = NULL;
 	return 0;

@@ -60,6 +60,7 @@ extern int devm_hwrng_register(struct device *dev, struct hwrng *rng);
 extern void hwrng_unregister(struct hwrng *rng);
 extern void devm_hwrng_unregister(struct device *dve, struct hwrng *rng);
 /** Feed random bits into the pool. */
-extern void add_hwgenerator_randomness(const char *buffer, size_t count, size_t entropy);
+extern void add_hwgenerator_randomness(const char *buffer, size_t count,
+					 size_t entropy, bool sleep_after);
 
 #endif /* LINUX_HWRANDOM_H_ */
