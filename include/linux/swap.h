@@ -407,7 +407,7 @@ int generic_swapfile_activate(struct swap_info_struct *, struct file *,
 #define SWAP_ADDRESS_SPACE_SHIFT	14
 #define SWAP_ADDRESS_SPACE_PAGES	(1 << SWAP_ADDRESS_SPACE_SHIFT)
 extern struct address_space *swapper_spaces[];
-extern bool swap_vma_readahead;
+extern bool enable_vma_readahead;
 #define swap_address_space(entry)			    \
 	(&swapper_spaces[swp_type(entry)][swp_offset(entry) \
 		>> SWAP_ADDRESS_SPACE_SHIFT])
@@ -447,7 +447,7 @@ extern bool has_usable_swap(void);
 
 static inline bool swap_use_vma_readahead(void)
 {
-	return READ_ONCE(swap_vma_readahead) && !atomic_read(&nr_rotate_swap);
+	return READ_ONCE(enable_vma_readahead) && !atomic_read(&nr_rotate_swap);
 }
 
 /* Swap 50% full? Release swapcache more aggressively.. */

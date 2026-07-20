@@ -323,11 +323,6 @@ void free_pages_and_swap_cache(struct page **pages, int nr)
 	release_pages(pagep, nr, false);
 }
 
-static inline bool swap_use_vma_readahead(void)
-{
-	return READ_ONCE(enable_vma_readahead) && !atomic_read(&nr_rotate_swap);
-}
-
 /*
  * Lookup a swap entry in the swap cache. A found page will be returned
  * unlocked and with its refcount incremented - we rely on the kernel
@@ -793,12 +788,38 @@ skip:
  * it will read ahead blocks by cluster-based(ie, physical disk based)
  * or vma-based(ie, virtual address based on faulty address) readahead.
  */
-struct page *swapin_readahead(swp_entry_t entry, gfp_t gfp_mask,
-				struct vm_fault *vmf)
+static struct page *swapin_readahead_vmf(swp_entry_t entry, gfp_t gfp_mask,
+					 struct vm_fault *vmf)
 {
 	return swap_use_vma_readahead() ?
 			swap_vma_readahead(entry, gfp_mask, vmf) :
 			swap_cluster_readahead(entry, gfp_mask, vmf);
+}
+
+/* Keep Android-common 4.14.254's mm/memory.c ABI without changing it. */
+struct page *swapin_readahead(swp_entry_t entry, gfp_t gfp_mask,
+				struct vm_area_struct *vma, unsigned long addr)
+{
+	struct vm_fault vmf = {
+		.vma = vma,
+		.address = addr,
+	};
+
+	return swapin_readahead_vmf(entry, gfp_mask, &vmf);
+}
+
+struct page *swap_readahead_detect(struct vm_fault *vmf,
+				   struct vma_swap_readahead *swap_ra)
+{
+	swap_ra->win = 1;
+	return NULL;
+}
+
+struct page *do_swap_page_readahead(swp_entry_t entry, gfp_t gfp_mask,
+				    struct vm_fault *vmf,
+				    struct vma_swap_readahead *swap_ra)
+{
+	return swapin_readahead(entry, gfp_mask, vmf->vma, vmf->address);
 }
 
 #ifdef CONFIG_SYSFS
