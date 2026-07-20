@@ -706,6 +706,13 @@ static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
 	return pte;
 }
 
+static inline pte_t maybe_mkwrite_flags(pte_t pte, unsigned long vma_flags)
+{
+	if (likely(vma_flags & VM_WRITE))
+		pte = pte_mkwrite(pte);
+	return pte;
+}
+
 int alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 		struct page *page);
 int finish_fault(struct vm_fault *vmf);
