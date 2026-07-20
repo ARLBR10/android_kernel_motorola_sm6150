@@ -13,8 +13,8 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/hw_random.h>
 #include <linux/io.h>
+#include <linux/random.h>
 
 #include <soc/qcom/scm.h>
 
@@ -58,7 +58,6 @@ void __init init_random_pool(void)
 		bytes_received = (bytes_received <= RANDOM_BUFFER_SIZE) ?
 					bytes_received : RANDOM_BUFFER_SIZE;
 		add_hwgenerator_randomness(random_buffer, bytes_received,
-					   bytes_received << 3);
+					   bytes_received << 3, false);
 	}
 }
-
