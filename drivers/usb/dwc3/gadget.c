@@ -428,6 +428,7 @@ int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 		if (saved_config)
 			dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
 	}
+
 	if (DWC3_DEPCMD_CMD(cmd) == DWC3_DEPCMD_STARTTRANSFER) {
 		int link_state;
 
@@ -440,7 +441,6 @@ int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 					ret);
 		}
 	}
-
 	dwc3_writel(dep->regs, DWC3_DEPCMDPAR0, params->param0);
 	dwc3_writel(dep->regs, DWC3_DEPCMDPAR1, params->param1);
 	dwc3_writel(dep->regs, DWC3_DEPCMDPAR2, params->param2);
@@ -1194,19 +1194,6 @@ static void __dwc3_prepare_one_trb(struct dwc3_ep *dep, struct dwc3_trb *trb,
 	if (usb_endpoint_xfer_bulk(dep->endpoint.desc) && dep->stream_capable)
 		trb->ctrl |= DWC3_TRB_CTRL_SID_SOFN(stream_id);
 
-	/*
-	 * As per data book 4.2.3.2TRB Control Bit Rules section
-	 *
-	 * The controller autonomously checks the HWO field of a TRB to determine if the
-	 * entire TRB is valid. Therefore, software must ensure that the rest of the TRB
-	 * is valid before setting the HWO field to '1'. In most systems, this means that
-	 * software must update the fourth DWORD of a TRB last.
-	 *
-	 * However there is a possibility of CPU re-ordering here which can cause
-	 * controller to observe the HWO bit set prematurely.
-	 * Add a write memory barrier to prevent CPU re-ordering.
-	 */
-	wmb();
 	trb->ctrl |= DWC3_TRB_CTRL_HWO;
 
 	dwc3_ep_inc_enq(dep);
@@ -1651,57 +1638,6 @@ static int dwc3_gadget_wakeup(struct usb_gadget *g)
 	return 0;
 }
 
-/* Caller must hold dwc->lock. */
-static int __dwc3_gadget_wakeup(struct dwc3 *dwc)
-{
-	int retries;
-	int ret;
-	u32 reg;
-	u8 link_state;
-
-	reg = dwc3_readl(dwc->regs, DWC3_DSTS);
-	link_state = DWC3_DSTS_USBLNKST(reg);
-
-	switch (link_state) {
-	case DWC3_LINK_STATE_RESET:
-	case DWC3_LINK_STATE_RX_DET:
-	case DWC3_LINK_STATE_U3:
-	case DWC3_LINK_STATE_U2:
-	case DWC3_LINK_STATE_U1:
-	case DWC3_LINK_STATE_RESUME:
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	ret = dwc3_gadget_set_link_state(dwc, DWC3_LINK_STATE_RECOV);
-	if (ret < 0) {
-		dev_err(dwc->dev, "failed to put link in Recovery\n");
-		return ret;
-	}
-
-	/* Recent versions clear the link-change request automatically. */
-	if (dwc->revision < DWC3_REVISION_194A) {
-		reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-		reg &= ~DWC3_DCTL_ULSTCHNGREQ_MASK;
-		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
-	}
-
-	retries = 20000;
-	while (retries--) {
-		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
-		if (DWC3_DSTS_USBLNKST(reg) == DWC3_LINK_STATE_U0)
-			break;
-	}
-
-	if (DWC3_DSTS_USBLNKST(reg) != DWC3_LINK_STATE_U0) {
-		dev_err(dwc->dev, "failed to send remote wakeup\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static bool dwc3_gadget_is_suspended(struct dwc3 *dwc)
 {
 	if (atomic_read(&dwc->in_lpm) ||
@@ -2029,6 +1965,57 @@ static void dwc3_gadget_wakeup_work(struct work_struct *w)
 	pm_runtime_put_noidle(dwc->dev);
 	dbg_event(0xFF, "Gdgwake put",
 		atomic_read(&dwc->dev->power.usage_count));
+}
+
+/* Caller must hold dwc->lock. */
+static int __dwc3_gadget_wakeup(struct dwc3 *dwc)
+{
+	int retries;
+	int ret;
+	u32 reg;
+	u8 link_state;
+
+	reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+	link_state = DWC3_DSTS_USBLNKST(reg);
+
+	switch (link_state) {
+	case DWC3_LINK_STATE_RESET:
+	case DWC3_LINK_STATE_RX_DET:
+	case DWC3_LINK_STATE_U3:
+	case DWC3_LINK_STATE_U2:
+	case DWC3_LINK_STATE_U1:
+	case DWC3_LINK_STATE_RESUME:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ret = dwc3_gadget_set_link_state(dwc, DWC3_LINK_STATE_RECOV);
+	if (ret < 0) {
+		dev_err(dwc->dev, "failed to put link in Recovery\n");
+		return ret;
+	}
+
+	/* Recent versions clear the link-change request automatically. */
+	if (dwc->revision < DWC3_REVISION_194A) {
+		reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+		reg &= ~DWC3_DCTL_ULSTCHNGREQ_MASK;
+		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+	}
+
+	retries = 20000;
+	while (retries--) {
+		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+		if (DWC3_DSTS_USBLNKST(reg) == DWC3_LINK_STATE_U0)
+			break;
+	}
+
+	if (DWC3_DSTS_USBLNKST(reg) != DWC3_LINK_STATE_U0) {
+		dev_err(dwc->dev, "failed to send remote wakeup\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static int dwc3_gadget_wakeup_int(struct dwc3 *dwc)
@@ -3991,12 +3978,10 @@ static irqreturn_t dwc3_thread_interrupt(int irq, void *_evt)
 
 	start_time = ktime_get();
 
-	local_bh_disable();
 	spin_lock_irqsave(&dwc->lock, flags);
 	dwc->bh_handled_evt_cnt[dwc->irq_dbg_index] = 0;
 	ret = dwc3_process_event_buf(evt);
 	spin_unlock_irqrestore(&dwc->lock, flags);
-	local_bh_enable();
 
 	dwc->bh_completion_time[dwc->irq_dbg_index] =
 		ktime_to_us(ktime_sub(ktime_get(), start_time));
@@ -4012,6 +3997,7 @@ static irqreturn_t dwc3_check_event_buf(struct dwc3_event_buffer *evt)
 	u32 count;
 	u32 reg;
 	ktime_t start_time;
+
 	if (!evt)
 		return IRQ_NONE;
 
@@ -4307,7 +4293,7 @@ err0:
 void dwc3_gadget_process_pending_events(struct dwc3 *dwc)
 {
 	if (dwc->pending_events) {
-		dwc3_check_event_buf(dwc->ev_buf);
+		dwc3_interrupt(dwc->irq_gadget, dwc->ev_buf);
 		dwc3_thread_interrupt(dwc->irq_gadget, dwc->ev_buf);
 		pm_runtime_put(dwc->dev);
 		dwc->pending_events = false;

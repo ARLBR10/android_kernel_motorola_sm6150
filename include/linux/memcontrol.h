@@ -480,13 +480,13 @@ unsigned long mem_cgroup_get_limit(struct mem_cgroup *memcg);
 void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 				struct task_struct *p);
 
-static inline void mem_cgroup_enter_user_fault(void)
+static inline void mem_cgroup_oom_enable(void)
 {
 	WARN_ON(current->in_user_fault);
 	current->in_user_fault = 1;
 }
 
-static inline void mem_cgroup_exit_user_fault(void)
+static inline void mem_cgroup_oom_disable(void)
 {
 	WARN_ON(!current->in_user_fault);
 	current->in_user_fault = 0;
@@ -913,11 +913,11 @@ static inline void mem_cgroup_handle_over_high(void)
 {
 }
 
-static inline void mem_cgroup_enter_user_fault(void)
+static inline void mem_cgroup_oom_enable(void)
 {
 }
 
-static inline void mem_cgroup_exit_user_fault(void)
+static inline void mem_cgroup_oom_disable(void)
 {
 }
 

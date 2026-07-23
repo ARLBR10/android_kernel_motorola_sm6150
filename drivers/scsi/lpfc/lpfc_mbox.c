@@ -101,7 +101,6 @@ lpfc_dump_static_vport(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmb,
 
 	return 0;
 }
-
 /**
  * lpfc_down_link - Bring down HBAs link.
  * @phba: pointer to lpfc hba data structure.

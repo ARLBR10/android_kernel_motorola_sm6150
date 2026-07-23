@@ -759,8 +759,8 @@ static void __cold _credit_init_bits(size_t bits)
  * available to them (particularly common in the embedded world).
  *
  * add_hwgenerator_randomness() is for true hardware RNGs, and will credit
- * entropy as specified by the caller. If the entropy pool is full and
- * sleep_after is true, it will block until more entropy is needed.
+ * entropy as specified by the caller. If sleep_after is true, it throttles
+ * after feeding the pool once the CRNG is ready.
  *
  * add_bootloader_randomness() is called by bootloader drivers, such as EFI
  * and device tree, and credits its input depending on whether or not the

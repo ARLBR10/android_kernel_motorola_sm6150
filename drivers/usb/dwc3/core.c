@@ -1487,6 +1487,7 @@ static int dwc3_probe(struct platform_device *pdev)
 	dma_set_max_seg_size(dev, UINT_MAX);
 
 	return 0;
+
 err3:
 	dwc3_free_scratch_buffers(dwc);
 err2:
@@ -1517,6 +1518,7 @@ static int dwc3_remove(struct platform_device *pdev)
 	 * memory region the next time probe is called.
 	 */
 	res->start -= DWC3_GLOBALS_REGS_START;
+
 	dwc3_debugfs_exit(dwc);
 	dwc3_gadget_exit(dwc);
 	pm_runtime_allow(&pdev->dev);

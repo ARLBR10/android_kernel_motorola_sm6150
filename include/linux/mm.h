@@ -699,7 +699,14 @@ void free_compound_page(struct page *page);
  * pte_mkwrite.  But get_user_pages can cause write faults for mappings
  * that do not have writing enabled, when used by access_process_vm.
  */
-static inline pte_t maybe_mkwrite(pte_t pte, unsigned long vma_flags)
+static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
+{
+	if (likely(vma->vm_flags & VM_WRITE))
+		pte = pte_mkwrite(pte);
+	return pte;
+}
+
+static inline pte_t maybe_mkwrite_flags(pte_t pte, unsigned long vma_flags)
 {
 	if (likely(vma_flags & VM_WRITE))
 		pte = pte_mkwrite(pte);
@@ -1322,21 +1329,9 @@ static inline void INIT_VMA(struct vm_area_struct *vma)
 #endif
 }
 
-struct page *__vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
-			      pte_t pte, bool with_public_device,
-			      unsigned long vma_flags);
-static inline struct page *_vm_normal_page(struct vm_area_struct *vma,
-					    unsigned long addr, pte_t pte,
-					    bool with_public_device)
-{
-	return __vm_normal_page(vma, addr, pte, with_public_device,
-				vma->vm_flags);
-}
-static inline struct page *vm_normal_page(struct vm_area_struct *vma,
-					  unsigned long addr, pte_t pte)
-{
-	return _vm_normal_page(vma, addr, pte, false);
-}
+struct page *_vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
+			     pte_t pte, bool with_public_device);
+#define vm_normal_page(vma, addr, pte) _vm_normal_page(vma, addr, pte, false)
 
 struct page *vm_normal_page_pmd(struct vm_area_struct *vma, unsigned long addr,
 				pmd_t pmd);
