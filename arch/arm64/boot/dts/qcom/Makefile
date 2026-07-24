@@ -1,6 +1,6 @@
 ifeq ($(CONFIG_MMI_DEVICE_DTBS),y)
 ifneq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
-	$(error Pippen DT w/o overlay is undefined!!!)
+$(error Pippen DT w/o overlay is undefined!!!)
 endif
 
 # Add 1k of padding to the DTBs to allow for environment variables
