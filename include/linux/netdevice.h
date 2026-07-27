@@ -44,6 +44,7 @@
 #include <net/dcbnl.h>
 #endif
 #include <net/netprio_cgroup.h>
+#include <net/xdp.h>
 
 #include <linux/netdev_features.h>
 #include <linux/neighbour.h>
@@ -700,6 +701,7 @@ struct netdev_rx_queue {
 #endif
 	struct kobject			kobj;
 	struct net_device		*dev;
+	struct xdp_rxq_info		xdp_rxq;
 } ____cacheline_aligned_in_smp;
 
 /*
@@ -1825,12 +1827,10 @@ struct net_device {
 	/* Interface address info used in eth_type_trans() */
 	unsigned char		*dev_addr;
 
-#ifdef CONFIG_SYSFS
 	struct netdev_rx_queue	*_rx;
 
 	unsigned int		num_rx_queues;
 	unsigned int		real_num_rx_queues;
-#endif
 
 	struct bpf_prog __rcu	*xdp_prog;
 	unsigned long		gro_flush_timeout;
@@ -3278,6 +3278,12 @@ static inline int netif_set_real_num_rx_queues(struct net_device *dev,
 }
 #endif
 
+static inline struct netdev_rx_queue *
+__netif_get_rx_queue(struct net_device *dev, unsigned int rxq)
+{
+	return dev->_rx + rxq;
+}
+
 #ifdef CONFIG_SYSFS
 static inline unsigned int get_netdev_rx_queue_index(
 		struct netdev_rx_queue *queue)
@@ -3345,6 +3351,7 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb);
 int netif_rx(struct sk_buff *skb);
 int netif_rx_ni(struct sk_buff *skb);
 int netif_receive_skb(struct sk_buff *skb);
+int netif_receive_skb_core(struct sk_buff *skb);
 gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb);
 void napi_gro_flush(struct napi_struct *napi, bool flush_old);
 struct sk_buff *napi_get_frags(struct napi_struct *napi);
@@ -3392,6 +3399,7 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 				    struct netdev_queue *txq, int *ret);
 
 typedef int (*xdp_op_t)(struct net_device *dev, struct netdev_xdp *xdp);
+int bpf_xdp_link_attach(const union bpf_attr *attr, struct bpf_prog *prog);
 int dev_change_xdp_fd(struct net_device *dev, struct netlink_ext_ack *extack,
 		      int fd, u32 flags);
 u8 __dev_xdp_attached(struct net_device *dev, xdp_op_t xdp_op, u32 *prog_id);

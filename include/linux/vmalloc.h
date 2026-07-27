@@ -25,6 +25,23 @@ struct notifier_block;		/* in notifier.h */
 /* bits [20..32] reserved for arch specific ioremap internals */
 
 /*
+ * Upstream's VM_FLUSH_RESET_PERMS (5.0) makes __vunmap() restore the direct-map
+ * alias permissions of an area that set_memory_ro()/set_memory_x() changed.
+ * This tree has no such handling in __vunmap(), and on arm64/4.14
+ * set_memory_ro() only ever rewrites the vmalloc alias -- change_memory_common()
+ * rejects anything outside the vmalloc range and the linear alias is never
+ * split for vmalloc pages -- so there is nothing to reset and the annotation is
+ * a genuine no-op here rather than a stub hiding missing work.
+ *
+ * Deliberately NOT copied from reference/sm6125-lineage-23.2: that tree defines
+ * VM_FLUSH_RESET_PERMS as 0x00000100, which collides with Qualcomm's VM_LOWMEM
+ * above.  Setting that bit on JIT allocations would corrupt VM_LOWMEM tracking.
+ */
+static inline void set_vm_flush_reset_perms(void *addr)
+{
+}
+
+/*
  * Maximum alignment for ioremap() regions.
  * Can be overriden by arch-specific value.
  */
@@ -77,6 +94,7 @@ extern void *vzalloc(unsigned long size);
 extern void *vmalloc_user(unsigned long size);
 extern void *vmalloc_node(unsigned long size, int node);
 extern void *vzalloc_node(unsigned long size, int node);
+extern void *vmalloc_user_node_flags(unsigned long size, int node, gfp_t flags);
 extern void *vmalloc_exec(unsigned long size);
 extern void *vmalloc_32(unsigned long size);
 extern void *vmalloc_32_user(unsigned long size);

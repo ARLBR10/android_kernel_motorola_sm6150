@@ -309,6 +309,16 @@ void css_task_iter_end(struct css_task_iter *it);
  *
  * The caller must already have a reference.
  */
+/*
+ * cgroup_id() - Return the id of a cgroup.  Upstream (5.5) stores a plain u64
+ * in kernfs_node::id; this tree still has the union kernfs_node_id, so the
+ * same value is read out of its .id member.
+ */
+static inline u64 cgroup_id(struct cgroup *cgrp)
+{
+	return cgrp->kn->id.id;
+}
+
 static inline void css_get(struct cgroup_subsys_state *css)
 {
 	if (!(css->flags & CSS_NO_REF))
@@ -547,6 +557,36 @@ static inline struct cgroup *cgroup_parent(struct cgroup *cgrp)
 
 	if (parent_css)
 		return container_of(parent_css, struct cgroup, self);
+	return NULL;
+}
+
+/**
+ * cgroup_ancestor - find ancestor of cgroup
+ * @cgrp: cgroup to find ancestor of
+ * @ancestor_level: level of ancestor to find starting from root
+ *
+ * Find ancestor of cgroup at specified level starting from root if it exists
+ * and return pointer to it.  Return NULL if @cgrp doesn't have ancestor at
+ * @ancestor_level.
+ *
+ * This function is safe to call as long as @cgrp is accessible.
+ */
+static inline struct cgroup *cgroup_ancestor(struct cgroup *cgrp,
+					     int ancestor_level)
+{
+	struct cgroup *ptr;
+
+	if (cgrp->level < ancestor_level)
+		return NULL;
+
+	for (ptr = cgrp;
+	     ptr && ptr->level > ancestor_level;
+	     ptr = cgroup_parent(ptr))
+		;
+
+	if (ptr && ptr->level == ancestor_level)
+		return ptr;
+
 	return NULL;
 }
 
@@ -814,5 +854,23 @@ static inline void put_cgroup_ns(struct cgroup_namespace *ns)
 	if (ns && refcount_dec_and_test(&ns->count))
 		free_cgroup_ns(ns);
 }
+
+#ifdef CONFIG_CGROUP_BPF
+static inline void cgroup_bpf_get(struct cgroup *cgrp)
+{
+	percpu_ref_get(&cgrp->bpf.refcnt);
+}
+
+static inline void cgroup_bpf_put(struct cgroup *cgrp)
+{
+	percpu_ref_put(&cgrp->bpf.refcnt);
+}
+
+#else /* CONFIG_CGROUP_BPF */
+
+static inline void cgroup_bpf_get(struct cgroup *cgrp) {}
+static inline void cgroup_bpf_put(struct cgroup *cgrp) {}
+
+#endif /* CONFIG_CGROUP_BPF */
 
 #endif /* _LINUX_CGROUP_H */

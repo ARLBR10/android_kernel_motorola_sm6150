@@ -3840,12 +3840,15 @@ static inline u64 perf_event_count(struct perf_event *event)
  *     will not be local and we cannot read them atomically
  *   - must not have a pmu::count method
  */
-int perf_event_read_local(struct perf_event *event, u64 *value)
+int perf_event_read_local(struct perf_event *event, u64 *value,
+			  u64 *enabled, u64 *running)
 {
 	unsigned long flags;
 	int ret = 0;
 	int local_cpu = smp_processor_id();
 	bool readable = cpumask_test_cpu(local_cpu, &event->readable_on_cpus);
+	u64 now;
+
 	/*
 	 * Disabling interrupts avoids all counter scheduling (context
 	 * switches, timer based rotation and IPIs).
@@ -3882,13 +3885,21 @@ int perf_event_read_local(struct perf_event *event, u64 *value)
 		goto out;
 	}
 
+	now = event->shadow_ctx_time + perf_clock();
+	if (enabled)
+		*enabled = now - event->tstamp_enabled;
 	/*
 	 * If the event is currently on this CPU, its either a per-task event,
 	 * or local to this CPU. Furthermore it means its ACTIVE (otherwise
 	 * oncpu == -1).
 	 */
-	if (event->oncpu == smp_processor_id() || readable)
+	if (event->oncpu == smp_processor_id() || readable) {
 		event->pmu->read(event);
+		if (running)
+			*running = now - event->tstamp_running;
+	} else if (running) {
+		*running = event->total_time_running;
+	}
 
 	*value = local64_read(&event->count);
 out:
@@ -8456,7 +8467,7 @@ static void bpf_overflow_handler(struct perf_event *event,
 {
 	struct bpf_perf_event_data_kern ctx = {
 		.data = data,
-		.regs = regs,
+		.regs = (bpf_user_pt_regs_t *)regs,
 	};
 	int ret = 0;
 
@@ -10013,12 +10024,9 @@ perf_event_alloc(struct perf_event_attr *attr, int cpu,
 		context = parent_event->overflow_handler_context;
 #if defined(CONFIG_BPF_SYSCALL) && defined(CONFIG_EVENT_TRACING)
 		if (overflow_handler == bpf_overflow_handler) {
-			struct bpf_prog *prog = bpf_prog_inc(parent_event->prog);
+			struct bpf_prog *prog = parent_event->prog;
 
-			if (IS_ERR(prog)) {
-				err = PTR_ERR(prog);
-				goto err_ns;
-			}
+			bpf_prog_inc(prog);
 			event->prog = prog;
 			event->orig_overflow_handler =
 				parent_event->orig_overflow_handler;
@@ -11351,6 +11359,14 @@ struct file *perf_event_get(unsigned int fd)
 	}
 
 	return file;
+}
+
+const struct perf_event *perf_get_event(struct file *file)
+{
+	if (file->f_op != &perf_fops)
+		return ERR_PTR(-EINVAL);
+
+	return file->private_data;
 }
 
 const struct perf_event_attr *perf_event_attrs(struct perf_event *event)

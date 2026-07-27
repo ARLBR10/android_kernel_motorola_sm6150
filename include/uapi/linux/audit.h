@@ -113,6 +113,7 @@
 #define AUDIT_FEATURE_CHANGE	1328	/* audit log listing feature changes */
 #define AUDIT_REPLACE		1329	/* Replace auditd if this packet unanswerd */
 #define AUDIT_KERN_MODULE	1330	/* Kernel Module events */
+#define AUDIT_BPF		1334	/* BPF subsystem */
 
 #define AUDIT_AVC		1400	/* SE Linux avc denial or grant */
 #define AUDIT_SELINUX_ERR	1401	/* Internal SE Linux Errors */
@@ -169,6 +170,11 @@
 /* Rule structure sizes -- if these change, different AUDIT_ADD and
  * AUDIT_LIST commands must be implemented. */
 #define AUDIT_MAX_FIELDS   64
+/* Audit state */
+#define AUDIT_OFF	0
+#define AUDIT_ON	1
+#define AUDIT_LOCKED	2
+
 #define AUDIT_MAX_KEY_LEN  256
 #define AUDIT_BITMASK_SIZE 64
 #define AUDIT_WORD(nr) ((__u32)((nr)/32))

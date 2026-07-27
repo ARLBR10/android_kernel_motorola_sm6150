@@ -5,6 +5,7 @@
 #include <linux/namei.h>
 #include <linux/pid_namespace.h>
 #include <linux/fs.h>
+#include <linux/sched/task.h>
 #include <linux/fdtable.h>
 #include <linux/filter.h>
 #include <linux/btf_ids.h>

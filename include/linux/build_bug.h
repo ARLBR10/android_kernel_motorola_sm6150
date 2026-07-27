@@ -87,4 +87,11 @@
 #define _Static_assert(expr, ...)
 #endif
 
+/**
+ * static_assert - check integer constant expression at build time
+ * Upstream 6bab69c65013 ("build_bug.h: add wrapper for _Static_assert").
+ */
+#define static_assert(expr, ...) __static_assert(expr, ##__VA_ARGS__, #expr)
+#define __static_assert(expr, msg, ...) _Static_assert(expr, msg)
+
 #endif	/* _LINUX_BUILD_BUG_H */

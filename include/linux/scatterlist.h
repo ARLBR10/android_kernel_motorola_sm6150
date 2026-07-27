@@ -197,6 +197,26 @@ static inline void sg_mark_end(struct scatterlist *sg)
 }
 
 /**
+ * sg_init_marker - Initialize markers in sg table
+ * @sgl:	   The SG table
+ * @nents:	   Number of entries in table
+ *
+ * Upstream f385b697c2c3 ("scatterlist: add sg_init_marker() helper").
+ */
+static inline void sg_init_marker(struct scatterlist *sgl,
+				  unsigned int nents)
+{
+#ifdef CONFIG_DEBUG_SG
+	unsigned int i;
+
+	for (i = 0; i < nents; i++)
+		sgl[i].sg_magic = SG_MAGIC;
+#endif
+	sg_mark_end(&sgl[nents - 1]);
+}
+
+
+/**
  * sg_unmark_end - Undo setting the end of the scatterlist
  * @sg:		 SG entryScatterlist
  *

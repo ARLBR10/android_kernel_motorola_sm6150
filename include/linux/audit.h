@@ -167,6 +167,11 @@ extern int audit_rule_change(int type, int seq, void *data, size_t datasz);
 extern int audit_list_rules_send(struct sk_buff *request_skb, int seq);
 
 extern u32 audit_enabled;
+
+static inline struct audit_context *audit_context(void)
+{
+	return current->audit_context;
+}
 #else /* CONFIG_AUDIT */
 static inline __printf(4, 5)
 void audit_log(struct audit_context *ctx, gfp_t gfp_mask, int type,
@@ -212,7 +217,12 @@ static inline int audit_log_task_context(struct audit_buffer *ab)
 static inline void audit_log_task_info(struct audit_buffer *ab,
 				       struct task_struct *tsk)
 { }
-#define audit_enabled 0
+#define audit_enabled AUDIT_OFF
+
+static inline struct audit_context *audit_context(void)
+{
+	return NULL;
+}
 #endif /* CONFIG_AUDIT */
 
 #ifdef CONFIG_AUDIT_COMPAT_GENERIC

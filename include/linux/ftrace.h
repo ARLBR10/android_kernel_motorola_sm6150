@@ -983,4 +983,33 @@ unsigned long arch_syscall_addr(int nr);
 
 #endif /* CONFIG_FTRACE_SYSCALLS */
 
+
+/*
+ * Direct ftrace calls (5.5, x86-only at the time, still unimplemented on
+ * arm64 in this kernel) are what BPF trampolines use to hook a kernel
+ * function.  Without them fentry/fexit/BPF_MODIFY_RETURN and struct_ops
+ * cannot be attached at all, so the operations report -ENODEV rather than
+ * silently succeeding.  Nothing in the 5.4 feature set this backport targets
+ * uses BPF trampolines: the Android BPF loader only loads cgroup_skb,
+ * sched_cls, xdp, socket_filter and tracepoint programs.
+ */
+#ifndef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
+static inline int register_ftrace_direct(unsigned long ip, unsigned long addr)
+{
+	return -ENODEV;
+}
+
+static inline int unregister_ftrace_direct(unsigned long ip, unsigned long addr)
+{
+	return -ENODEV;
+}
+
+static inline int modify_ftrace_direct(unsigned long ip,
+				       unsigned long old_addr,
+				       unsigned long new_addr)
+{
+	return -ENODEV;
+}
+#endif
+
 #endif /* _LINUX_FTRACE_H */

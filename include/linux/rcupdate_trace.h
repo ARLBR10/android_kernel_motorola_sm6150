@@ -79,6 +79,44 @@ void call_rcu_tasks_trace(struct rcu_head *rhp, rcu_callback_t func);
 void synchronize_rcu_tasks_trace(void);
 void rcu_barrier_tasks_trace(void);
 
+#else /* #ifdef CONFIG_TASKS_TRACE_RCU */
+
+/*
+ * CONFIG_TASKS_TRACE_RCU (5.7) is not available on this tree.  The only user
+ * of the tasks-trace grace period in the backported BPF code is the free path
+ * for *sleepable* BPF programs (BPF_F_SLEEPABLE).  Sleepable programs are
+ * unreachable here: the verifier only accepts BPF_F_SLEEPABLE for BPF_LSM and
+ * BTF-attached tracing programs, CONFIG_BPF_LSM is off, and BTF trampoline
+ * attach is not supported on arm64/4.14.  For every program that can actually
+ * exist on this kernel a normal RCU grace period is exactly the right barrier,
+ * so these map onto plain RCU rather than silently skipping a wait.
+ */
+static inline void rcu_read_lock_trace(void)
+{
+	rcu_read_lock();
+}
+
+static inline void rcu_read_unlock_trace(void)
+{
+	rcu_read_unlock();
+}
+
+static inline void call_rcu_tasks_trace(struct rcu_head *rhp,
+					rcu_callback_t func)
+{
+	call_rcu(rhp, func);
+}
+
+static inline void synchronize_rcu_tasks_trace(void)
+{
+	synchronize_rcu();
+}
+
+static inline void rcu_barrier_tasks_trace(void)
+{
+	rcu_barrier();
+}
+
 #endif /* #ifdef CONFIG_TASKS_TRACE_RCU */
 
 #endif /* __LINUX_RCUPDATE_TRACE_H */

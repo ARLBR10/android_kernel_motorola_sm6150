@@ -30,6 +30,7 @@
 #include <net/netns/xfrm.h>
 #include <net/netns/mpls.h>
 #include <net/netns/can.h>
+#include <net/netns/bpf.h>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
 #include <linux/skbuff.h>
@@ -136,6 +137,9 @@ struct net {
 	struct sk_buff_head	wext_nlevents;
 #endif
 	struct net_generic __rcu	*gen;
+
+	/* Used to store attached BPF programs */
+	struct netns_bpf	bpf;
 
 	/* Note : following structs are cache line aligned */
 #ifdef CONFIG_XFRM

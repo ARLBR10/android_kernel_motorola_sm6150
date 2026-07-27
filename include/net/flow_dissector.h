@@ -291,4 +291,29 @@ flow_dissector_init_keys(struct flow_dissector_key_control *key_control,
 	memset(key_basic, 0, sizeof(*key_basic));
 }
 
+struct bpf_flow_keys;
+struct bpf_prog;
+struct net;
+
+/*
+ * BPF flow dissector context.  Upstream d58e468b1112 ("flow_dissector: implements
+ * flow dissector BPF hook").  The flow-dissector BPF hook itself
+ * (net/core/flow_dissector.c) is not part of this backport; the type is needed
+ * because include/linux/bpf_types.h names it as the program context type.
+ */
+struct bpf_flow_dissector {
+	struct bpf_flow_keys	*flow_keys;
+	const struct sk_buff	*skb;
+	void			*data;
+	void			*data_end;
+};
+
+bool bpf_flow_dissect(struct bpf_prog *prog, struct bpf_flow_dissector *ctx,
+			      __be16 proto, int nhoff, int hlen, unsigned int flags);
+
+#ifdef CONFIG_BPF_SYSCALL
+int flow_dissector_bpf_prog_attach_check(struct net *net,
+					 struct bpf_prog *prog);
+#endif
+
 #endif

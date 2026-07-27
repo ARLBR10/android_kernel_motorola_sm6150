@@ -227,6 +227,15 @@ static inline u64 ktime_get_boot_ns(void)
 	return ktime_to_ns(ktime_get_boottime());
 }
 
+/*
+ * Upstream 9285ec4c8b61 renamed ktime_get_boot_ns() to ktime_get_boottime_ns().
+ * The rename is not taken treewide here, so both spellings are provided.
+ */
+static inline u64 ktime_get_boottime_ns(void)
+{
+	return ktime_to_ns(ktime_get_boottime());
+}
+
 static inline u64 ktime_get_tai_ns(void)
 {
 	return ktime_to_ns(ktime_get_clocktai());

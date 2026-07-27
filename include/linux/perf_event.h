@@ -15,6 +15,7 @@
 #define _LINUX_PERF_EVENT_H
 
 #include <uapi/linux/perf_event.h>
+#include <uapi/linux/bpf_perf_event.h>
 
 /*
  * Kernel-internal data types and definitions:
@@ -839,8 +840,9 @@ struct perf_output_handle {
 };
 
 struct bpf_perf_event_data_kern {
-	struct pt_regs *regs;
+	bpf_user_pt_regs_t *regs;
 	struct perf_sample_data *data;
+	struct perf_event *event;
 };
 
 #ifdef CONFIG_CGROUP_PERF
@@ -919,7 +921,8 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr,
 				void *context);
 extern void perf_pmu_migrate_context(struct pmu *pmu,
 				int src_cpu, int dst_cpu);
-int perf_event_read_local(struct perf_event *event, u64 *value);
+int perf_event_read_local(struct perf_event *event, u64 *value,
+			  u64 *enabled, u64 *running);
 extern u64 perf_event_read_value(struct perf_event *event,
 				 u64 *enabled, u64 *running);
 
@@ -1157,6 +1160,40 @@ extern struct perf_guest_info_callbacks *perf_guest_cbs;
 extern int perf_register_guest_info_callbacks(struct perf_guest_info_callbacks *callbacks);
 extern int perf_unregister_guest_info_callbacks(struct perf_guest_info_callbacks *callbacks);
 
+struct bpf_prog;
+
+extern const struct perf_event *perf_get_event(struct file *file);
+
+/*
+ * perf_event_ksymbol() emits PERF_RECORD_KSYMBOL so that perf(1) can name
+ * dynamically created kernel text (BPF programs, trampolines).  The 5.x perf
+ * ksymbol record plumbing in kernel/events/core.c is not part of this
+ * backport.  Nothing in the BPF load or run path consults it; the only loss is
+ * that perf reports raw addresses for JITed BPF instead of symbol names.
+ */
+static inline void perf_event_ksymbol(u16 ksym_type, u64 addr, u32 len,
+				      bool unregister, const char *sym)
+{
+}
+
+/*
+ * perf_event_bpf_event() only emits PERF_RECORD_BPF_EVENT /
+ * PERF_RECORD_KSYMBOL records so that perf(1) can symbolise JITed BPF
+ * programs.  Emitting them for real needs the 5.x perf ksymbol/bpf record
+ * plumbing in kernel/events/core.c, which is not part of this backport.
+ *
+ * Nothing in the BPF load path consults it: the verifier, the syscall
+ * layer, netbpfload and netd all work identically without it.  The only
+ * loss is that `perf record`/`perf top` will show unresolved addresses for
+ * BPF programs instead of their names.  This is a deliberate, bounded gap,
+ * not a stub standing in for a feature the loader needs.
+ */
+static inline void perf_event_bpf_event(struct bpf_prog *prog,
+					enum perf_bpf_event_type type,
+					u16 flags)
+{
+}
+
 extern void perf_event_exec(void);
 extern void perf_event_comm(struct task_struct *tsk, bool exec);
 extern void perf_event_namespaces(struct task_struct *tsk);
@@ -1366,7 +1403,8 @@ static inline const struct perf_event_attr *perf_event_attrs(struct perf_event *
 {
 	return ERR_PTR(-EINVAL);
 }
-static inline int perf_event_read_local(struct perf_event *event, u64 *value)
+static inline int perf_event_read_local(struct perf_event *event, u64 *value,
+				       u64 *enabled, u64 *running)
 {
 	return -EINVAL;
 }

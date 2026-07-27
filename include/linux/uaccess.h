@@ -277,6 +277,48 @@ extern long notrace __probe_kernel_write(void *dst, const void *src, size_t size
 extern long notrace probe_user_write(void __user *dst, const void *src, size_t size);
 extern long notrace __probe_user_write(void __user *dst, const void *src, size_t size);
 
+extern __must_check int check_zeroed_user(const void __user *from, size_t size);
+
+/**
+ * copy_struct_from_user: copy a struct from userspace
+ * @dst:   Destination address, in kernel space. This buffer must be @ksize
+ *         bytes long.
+ * @ksize: Size of @dst struct.
+ * @src:   Source address, in userspace.
+ * @usize: (Alleged) size of @src struct.
+ *
+ * Copies a struct from userspace to kernel space, in a way that guarantees
+ * backwards-compatibility for struct syscall arguments (as long as future
+ * struct extensions are made such that all new fields are *appended* to the
+ * old struct, and zeroed-out new fields have the same meaning as the old
+ * struct).
+ *
+ * Returns (in all cases, some data may have been copied):
+ *  * -E2BIG:  (@usize > @ksize) and there are non-zero trailing bytes in @src.
+ *  * -EFAULT: access to userspace failed.
+ */
+static __always_inline __must_check int
+copy_struct_from_user(void *dst, size_t ksize, const void __user *src,
+		      size_t usize)
+{
+	size_t size = min(ksize, usize);
+	size_t rest = max(ksize, usize) - size;
+
+	/* Deal with trailing bytes. */
+	if (usize < ksize) {
+		memset(dst + size, 0, rest);
+	} else if (usize > ksize) {
+		int ret = check_zeroed_user(src + size, rest);
+
+		if (ret <= 0)
+			return ret ?: -E2BIG;
+	}
+	/* Copy the interoperable parts of the struct. */
+	if (copy_from_user(dst, src, size))
+		return -EFAULT;
+	return 0;
+}
+
 extern long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
 extern long strncpy_from_unsafe_user(char *dst, const void __user *unsafe_addr,
 				     long count);

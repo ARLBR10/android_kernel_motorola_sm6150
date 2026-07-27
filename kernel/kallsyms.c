@@ -659,6 +659,46 @@ static const struct seq_operations kallsyms_op = {
 	.show = s_show
 };
 
+static inline int kallsyms_for_perf(void)
+{
+#ifdef CONFIG_PERF_EVENTS
+	extern int sysctl_perf_event_paranoid;
+
+	if (sysctl_perf_event_paranoid <= 1)
+		return 1;
+#endif
+	return 0;
+}
+
+/*
+ * We show kallsyms information even to normal users if we've enabled
+ * kernel profiling and are explicitly not paranoid (so kptr_restrict
+ * is clear, and sysctl_perf_event_paranoid isn't set).
+ *
+ * Otherwise, require CAP_SYSLOG (assuming kptr_restrict isn't set to
+ * block even that).
+ *
+ * Upstream (5.8) passes CAP_OPT_NOAUDIT to security_capable(); this tree
+ * predates the CAP_OPT_* flags and spells the same thing
+ * security_capable_noaudit().
+ */
+bool kallsyms_show_value(const struct cred *cred)
+{
+	switch (kptr_restrict) {
+	case 0:
+		if (kallsyms_for_perf())
+			return true;
+	/* fallthrough */
+	case 1:
+		if (security_capable_noaudit(cred, &init_user_ns,
+					     CAP_SYSLOG) == 0)
+			return true;
+	/* fallthrough */
+	default:
+		return false;
+	}
+}
+
 static int kallsyms_open(struct inode *inode, struct file *file)
 {
 	/*

@@ -256,6 +256,29 @@ nodata:
 }
 EXPORT_SYMBOL(__alloc_skb);
 
+static struct sk_buff *__build_skb_around(struct sk_buff *skb,
+					  void *data, unsigned int frag_size)
+{
+	struct skb_shared_info *shinfo;
+	unsigned int size = frag_size ? : ksize(data);
+
+	size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+	skb->truesize = SKB_TRUESIZE(size);
+	refcount_set(&skb->users, 1);
+	skb->head = data;
+	skb->data = data;
+	skb_reset_tail_pointer(skb);
+	skb->end = skb->tail + size;
+	skb->mac_header = (typeof(skb->mac_header))~0U;
+	skb->transport_header = (typeof(skb->transport_header))~0U;
+
+	shinfo = skb_shinfo(skb);
+	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
+	atomic_set(&shinfo->dataref, 1);
+
+	return skb;
+}
+
 /**
  * __build_skb - build a network buffer
  * @data: data buffer provided by caller
@@ -277,32 +300,14 @@ EXPORT_SYMBOL(__alloc_skb);
  */
 struct sk_buff *__build_skb(void *data, unsigned int frag_size)
 {
-	struct skb_shared_info *shinfo;
 	struct sk_buff *skb;
-	unsigned int size = frag_size ? : ksize(data);
 
 	skb = kmem_cache_alloc(skbuff_head_cache, GFP_ATOMIC);
-	if (!skb)
+	if (unlikely(!skb))
 		return NULL;
 
-	size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
-
 	memset(skb, 0, offsetof(struct sk_buff, tail));
-	skb->truesize = SKB_TRUESIZE(size);
-	refcount_set(&skb->users, 1);
-	skb->head = data;
-	skb->data = data;
-	skb_reset_tail_pointer(skb);
-	skb->end = skb->tail + size;
-	skb->mac_header = (typeof(skb->mac_header))~0U;
-	skb->transport_header = (typeof(skb->transport_header))~0U;
-
-	/* make sure we initialize shinfo sequentially */
-	shinfo = skb_shinfo(skb);
-	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
-	atomic_set(&shinfo->dataref, 1);
-
-	return skb;
+	return __build_skb_around(skb, data, frag_size);
 }
 
 /* build_skb() is wrapper over __build_skb(), that specifically
@@ -322,6 +327,22 @@ struct sk_buff *build_skb(void *data, unsigned int frag_size)
 	return skb;
 }
 EXPORT_SYMBOL(build_skb);
+
+struct sk_buff *build_skb_around(struct sk_buff *skb,
+				 void *data, unsigned int frag_size)
+{
+	if (unlikely(!skb))
+		return NULL;
+
+	skb = __build_skb_around(skb, data, frag_size);
+	if (frag_size) {
+		skb->head_frag = 1;
+		if (page_is_pfmemalloc(virt_to_head_page(data)))
+			skb->pfmemalloc = 1;
+	}
+	return skb;
+}
+EXPORT_SYMBOL(build_skb_around);
 
 #define NAPI_SKB_CACHE_SIZE	64
 

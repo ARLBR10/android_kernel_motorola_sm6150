@@ -4587,6 +4587,22 @@ static int __netif_receive_skb(struct sk_buff *skb)
 	return ret;
 }
 
+/*
+ * Bypass RPS and generic XDP for frames reconstructed by cpumap on the
+ * destination CPU. Callers are responsible for running in softirq context.
+ */
+int netif_receive_skb_core(struct sk_buff *skb)
+{
+	int ret;
+
+	rcu_read_lock();
+	ret = __netif_receive_skb_core(skb, false);
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(netif_receive_skb_core);
+
 static int generic_xdp_install(struct net_device *dev, struct netdev_xdp *xdp)
 {
 	struct bpf_prog *old = rtnl_dereference(dev->xdp_prog);
@@ -7179,6 +7195,21 @@ static int dev_xdp_install(struct net_device *dev, xdp_op_t xdp_op,
 	return xdp_op(dev, &xdp);
 }
 
+/*
+ * BPF_LINK_CREATE for XDP is a 5.10 feature that sits on top of the 5.10
+ * dev_xdp_attach() rework (multi-mode xdp state, bpf_xdp_link lifetime tied
+ * to the netdev).  That rework is not part of this backport, which targets the
+ * 5.4 feature set the Android BPF loader requires.  XDP programs are still
+ * attachable the way a 5.4 kernel attaches them, through
+ * dev_change_xdp_fd()/IFLA_XDP over netlink, which is what netbpfload and netd
+ * actually use.  Report the link type as unsupported rather than pretending to
+ * create a link that nothing would own.
+ */
+int bpf_xdp_link_attach(const union bpf_attr *attr, struct bpf_prog *prog)
+{
+	return -EOPNOTSUPP;
+}
+
 /**
  *	dev_change_xdp_fd - set or clear a bpf program for a device rx path
  *	@dev: device
@@ -7591,12 +7622,12 @@ void netif_stacked_transfer_operstate(const struct net_device *rootdev,
 }
 EXPORT_SYMBOL(netif_stacked_transfer_operstate);
 
-#ifdef CONFIG_SYSFS
 static int netif_alloc_rx_queues(struct net_device *dev)
 {
 	unsigned int i, count = dev->num_rx_queues;
 	struct netdev_rx_queue *rx;
 	size_t sz = count * sizeof(*rx);
+	int err;
 
 	BUG_ON(count < 1);
 
@@ -7606,11 +7637,32 @@ static int netif_alloc_rx_queues(struct net_device *dev)
 
 	dev->_rx = rx;
 
-	for (i = 0; i < count; i++)
+	for (i = 0; i < count; i++) {
 		rx[i].dev = dev;
+		err = xdp_rxq_info_reg(&rx[i].xdp_rxq, dev, i);
+		if (err)
+			goto err_rxq_info;
+	}
 	return 0;
+
+err_rxq_info:
+	while (i--)
+		xdp_rxq_info_unreg(&rx[i].xdp_rxq);
+	kvfree(dev->_rx);
+	dev->_rx = NULL;
+	return err;
 }
-#endif
+
+static void netif_free_rx_queues(struct net_device *dev)
+{
+	unsigned int i;
+
+	if (!dev->_rx)
+		return;
+
+	for (i = 0; i < dev->num_rx_queues; i++)
+		xdp_rxq_info_unreg(&dev->_rx[i].xdp_rxq);
+}
 
 static void netdev_init_one_queue(struct net_device *dev,
 				  struct netdev_queue *queue, void *_unused)
@@ -8256,12 +8308,10 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	if (netif_alloc_netdev_queues(dev))
 		goto free_all;
 
-#ifdef CONFIG_SYSFS
 	dev->num_rx_queues = rxqs;
 	dev->real_num_rx_queues = rxqs;
 	if (netif_alloc_rx_queues(dev))
 		goto free_all;
-#endif
 
 	strcpy(dev->name, name);
 	dev->name_assign_type = name_assign_type;
@@ -8301,9 +8351,8 @@ void free_netdev(struct net_device *dev)
 
 	might_sleep();
 	netif_free_tx_queues(dev);
-#ifdef CONFIG_SYSFS
+	netif_free_rx_queues(dev);
 	kvfree(dev->_rx);
-#endif
 
 	kfree(rcu_dereference_protected(dev->ingress_queue, 1));
 

@@ -10,6 +10,7 @@
 #include <linux/bpf.h>
 #include <linux/btf.h>
 #include <linux/bpf_verifier.h>
+#include <linux/overflow.h>
 #include <linux/filter.h>
 #include <net/netlink.h>
 #include <linux/file.h>

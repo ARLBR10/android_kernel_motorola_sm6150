@@ -19,7 +19,6 @@
 #include <linux/filter.h>
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
-#include "preload/bpf_preload.h"
 
 enum bpf_type {
 	BPF_TYPE_UNSPEC	= 0,
@@ -608,7 +607,14 @@ static int bpf_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
-static void bpf_free_inode(struct inode *inode)
+/*
+ * Upstream uses .free_inode (5.2, 8b6a3fe8fab1) which runs after the RCU
+ * grace period.  This tree's super_operations predates it, so the same work
+ * is done from .destroy_inode, which is where 4.14 frees inodes.  The two
+ * differ only in when the callback runs relative to RCU; bpf_any_put() and
+ * kfree() of i_link are both safe from .destroy_inode.
+ */
+static void bpf_destroy_inode(struct inode *inode)
 {
 	enum bpf_type type;
 
@@ -623,7 +629,7 @@ static const struct super_operations bpf_super_ops = {
 	.statfs		= simple_statfs,
 	.drop_inode	= generic_delete_inode,
 	.show_options	= bpf_show_options,
-	.free_inode	= bpf_free_inode,
+	.destroy_inode	= bpf_destroy_inode,
 };
 
 enum {
@@ -669,89 +675,17 @@ static int bpf_parse_options(char *data, struct bpf_mount_opts *opts)
 	return 0;
 }
 
-struct bpf_preload_ops *bpf_preload_ops;
-EXPORT_SYMBOL_GPL(bpf_preload_ops);
-
-static bool bpf_preload_mod_get(void)
-{
-	/* If bpf_preload.ko wasn't loaded earlier then load it now.
-	 * When bpf_preload is built into vmlinux the module's __init
-	 * function will populate it.
-	 */
-	if (!bpf_preload_ops) {
-		request_module("bpf_preload");
-		if (!bpf_preload_ops)
-			return false;
-	}
-	/* And grab the reference, so the module doesn't disappear while the
-	 * kernel is interacting with the kernel module and its UMD.
-	 */
-	if (!try_module_get(bpf_preload_ops->owner)) {
-		pr_err("bpf_preload module get failed.\n");
-		return false;
-	}
-	return true;
-}
-
-static void bpf_preload_mod_put(void)
-{
-	if (bpf_preload_ops)
-		/* now user can "rmmod bpf_preload" if necessary */
-		module_put(bpf_preload_ops->owner);
-}
-
-static DEFINE_MUTEX(bpf_preload_lock);
-
+/*
+ * CONFIG_BPF_PRELOAD is not supported on this tree: the user-mode-driver
+ * infrastructure it needs (linux/usermode_driver.h, umd_info, the embedded
+ * iterators blob) is 5.10-only and nothing in the Android userspace this
+ * kernel serves consumes the preloaded bpffs iterators.  kernel/bpf/preload/
+ * was therefore not imported and populate_bpffs() is a no-op rather than a
+ * path that pretends to load something.
+ */
 static int populate_bpffs(struct dentry *parent)
 {
-	struct bpf_preload_info objs[BPF_PRELOAD_LINKS] = {};
-	struct bpf_link *links[BPF_PRELOAD_LINKS] = {};
-	int err = 0, i;
-
-	/* grab the mutex to make sure the kernel interactions with bpf_preload
-	 * UMD are serialized
-	 */
-	mutex_lock(&bpf_preload_lock);
-
-	/* if bpf_preload.ko wasn't built into vmlinux then load it */
-	if (!bpf_preload_mod_get())
-		goto out;
-
-	if (!bpf_preload_ops->info.tgid) {
-		/* preload() will start UMD that will load BPF iterator programs */
-		err = bpf_preload_ops->preload(objs);
-		if (err)
-			goto out_put;
-		for (i = 0; i < BPF_PRELOAD_LINKS; i++) {
-			links[i] = bpf_link_by_id(objs[i].link_id);
-			if (IS_ERR(links[i])) {
-				err = PTR_ERR(links[i]);
-				goto out_put;
-			}
-		}
-		for (i = 0; i < BPF_PRELOAD_LINKS; i++) {
-			err = bpf_iter_link_pin_kernel(parent,
-						       objs[i].link_name, links[i]);
-			if (err)
-				goto out_put;
-			/* do not unlink successfully pinned links even
-			 * if later link fails to pin
-			 */
-			links[i] = NULL;
-		}
-		/* finish() will tell UMD process to exit */
-		err = bpf_preload_ops->finish();
-		if (err)
-			goto out_put;
-	}
-out_put:
-	bpf_preload_mod_put();
-out:
-	mutex_unlock(&bpf_preload_lock);
-	for (i = 0; i < BPF_PRELOAD_LINKS && err; i++)
-		if (!IS_ERR_OR_NULL(links[i]))
-			bpf_link_put(links[i]);
-	return err;
+	return 0;
 }
 
 static int bpf_fill_super(struct super_block *sb, void *data, int silent)
@@ -797,7 +731,6 @@ static int __init bpf_init(void)
 {
 	int ret;
 
-	mutex_init(&bpf_preload_lock);
 
 	ret = sysfs_create_mount_point(fs_kobj, "bpf");
 	if (ret)

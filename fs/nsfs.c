@@ -224,6 +224,15 @@ out_invalid:
 	return ERR_PTR(-EINVAL);
 }
 
+/**
+ * ns_match() - Returns true if current namespace matches dev/ino provided.
+ * Upstream d95fa3c76a66 ("bpf: Introduce bpf_get_ns_current_pid_tgid()").
+ */
+bool ns_match(const struct ns_common *ns, dev_t dev, ino_t ino)
+{
+	return (ns->inum == ino) && (nsfs_mnt->mnt_sb->s_dev == dev);
+}
+
 static int nsfs_show_path(struct seq_file *seq, struct dentry *dentry)
 {
 	struct inode *inode = d_inode(dentry);

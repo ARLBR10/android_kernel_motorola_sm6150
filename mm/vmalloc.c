@@ -2049,6 +2049,20 @@ EXPORT_SYMBOL(vzalloc_node);
  *	use __vmalloc() instead.
  */
 
+/**
+ * vmalloc_user_node_flags - allocate zeroed virtually contiguous memory
+ * suitable for remapping to userspace, on a given node and with extra gfp
+ * flags.  Upstream bc84c53525a1 ("mm: Add vmalloc_user_node_flags").
+ */
+void *vmalloc_user_node_flags(unsigned long size, int node, gfp_t flags)
+{
+	return __vmalloc_node_range(size, SHMLBA,  VMALLOC_START, VMALLOC_END,
+				    flags | __GFP_ZERO, PAGE_KERNEL,
+				    VM_USERMAP, node,
+				    __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_user_node_flags);
+
 void *vmalloc_exec(unsigned long size)
 {
 	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL_EXEC,
