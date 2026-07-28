@@ -42,6 +42,36 @@ struct itimerval {
 	struct timeval it_value;	/* current value */
 };
 
+#ifndef __kernel_timespec
+struct __kernel_timespec {
+	__kernel_time64_t       tv_sec;                 /* seconds */
+	long long               tv_nsec;                /* nanoseconds */
+};
+#endif
+
+/*
+ * legacy timeval structure, only embedded in structures that
+ * traditionally used 'timeval' to pass time intervals (not absolute
+ * times). Do not add new users. If user space fails to compile
+ * here, this is probably because it is not y2038 safe and needs to
+ * be changed to use another interface.
+ */
+struct __kernel_old_timeval {
+	__kernel_long_t tv_sec;
+	__kernel_long_t tv_usec;
+};
+
+/*
+ * 32-bit timeval, used by the compat socket option paths. Upstream carries
+ * this in include/linux/time32.h as part of the y2038 rework; defined here so
+ * the backported net/core/sock.c compiles without pulling in that rework,
+ * which this tree has not taken.
+ */
+struct old_timeval32 {
+	__s32	tv_sec;
+	__s32	tv_usec;
+};
+
 /*
  * The IDs of the various system clocks (for POSIX.1b interval timers):
  */

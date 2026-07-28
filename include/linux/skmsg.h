@@ -286,17 +286,7 @@ static inline struct sk_psock *sk_psock(const struct sock *sk)
 
 static inline bool sk_has_psock(struct sock *sk)
 {
-	/*
-	 * tcp_bpf_recvmsg() only exists with CONFIG_BPF_STREAM_PARSER, which is
-	 * off on this device and whose net/ipv4/tcp_bpf.c is not part of this
-	 * backport.  skmsg.h is only included here so that kernel/bpf/btf.c
-	 * compiles; without a psock there is nothing to report.
-	 */
-#ifdef CONFIG_BPF_STREAM_PARSER
 	return sk_psock(sk) != NULL && sk->sk_prot->recvmsg == tcp_bpf_recvmsg;
-#else
-	return false;
-#endif
 }
 
 static inline void sk_psock_queue_msg(struct sk_psock *psock,

@@ -61,6 +61,14 @@ struct page {
 		pgoff_t index;		/* Our offset within mapping. */
 		void *freelist;		/* sl[aou]b first free object */
 		/* page_deferred_list().prev	-- second tail page */
+		/*
+		 * @dma_addr: used by the page_pool allocator (net/core/page_pool.c)
+		 * while the page is owned by a pool, which is mutually exclusive
+		 * with @index/@freelist. Upstream 5.x carries this in the
+		 * rewritten struct page; added here so include/net/page_pool.h
+		 * compiles without that rewrite, which this tree has not taken.
+		 */
+		dma_addr_t dma_addr;
 	};
 
 	union {

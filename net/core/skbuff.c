@@ -256,6 +256,7 @@ nodata:
 }
 EXPORT_SYMBOL(__alloc_skb);
 
+/* Caller must provide SKB that is memset cleared */
 static struct sk_buff *__build_skb_around(struct sk_buff *skb,
 					  void *data, unsigned int frag_size)
 {
@@ -263,6 +264,8 @@ static struct sk_buff *__build_skb_around(struct sk_buff *skb,
 	unsigned int size = frag_size ? : ksize(data);
 
 	size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+
+	/* Assumes caller memset cleared SKB */
 	skb->truesize = SKB_TRUESIZE(size);
 	refcount_set(&skb->users, 1);
 	skb->head = data;
@@ -272,6 +275,7 @@ static struct sk_buff *__build_skb_around(struct sk_buff *skb,
 	skb->mac_header = (typeof(skb->mac_header))~0U;
 	skb->transport_header = (typeof(skb->transport_header))~0U;
 
+	/* make sure we initialize shinfo sequentially */
 	shinfo = skb_shinfo(skb);
 	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
 	atomic_set(&shinfo->dataref, 1);
@@ -307,6 +311,7 @@ struct sk_buff *__build_skb(void *data, unsigned int frag_size)
 		return NULL;
 
 	memset(skb, 0, offsetof(struct sk_buff, tail));
+
 	return __build_skb_around(skb, data, frag_size);
 }
 
@@ -328,6 +333,12 @@ struct sk_buff *build_skb(void *data, unsigned int frag_size)
 }
 EXPORT_SYMBOL(build_skb);
 
+/**
+ * build_skb_around - build a network buffer around provided skb
+ * @skb: sk_buff provide by caller, must be memset cleared
+ * @data: data buffer provided by caller
+ * @frag_size: size of data, or 0 if head was kmalloced
+ */
 struct sk_buff *build_skb_around(struct sk_buff *skb,
 				 void *data, unsigned int frag_size)
 {
@@ -335,7 +346,8 @@ struct sk_buff *build_skb_around(struct sk_buff *skb,
 		return NULL;
 
 	skb = __build_skb_around(skb, data, frag_size);
-	if (frag_size) {
+
+	if (skb && frag_size) {
 		skb->head_frag = 1;
 		if (page_is_pfmemalloc(virt_to_head_page(data)))
 			skb->pfmemalloc = 1;
@@ -1555,6 +1567,8 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	skb->hdr_len  = 0;
 	skb->nohdr    = 0;
 	atomic_set(&skb_shinfo(skb)->dataref, 1);
+
+	skb_metadata_clear(skb);
 
 	/* It is not generally safe to change skb->truesize.
 	 * For the moment, we really care of rx path, or
