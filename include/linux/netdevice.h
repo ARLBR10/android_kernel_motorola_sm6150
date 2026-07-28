@@ -68,6 +68,9 @@ struct mpls_dev;
 struct udp_tunnel_info;
 struct bpf_prog;
 struct xdp_buff;
+struct xdp_frame;
+struct xdp_dev_bulk_queue;
+struct bpf_offloaded_map;
 
 void netdev_set_default_ethtool_ops(struct net_device *dev,
 				    const struct ethtool_ops *ops);
@@ -796,7 +799,7 @@ enum tc_setup_type {
 /* These structures hold the attributes of xdp state that are being passed
  * to the netdevice through the xdp op.
  */
-enum xdp_netdev_command {
+enum bpf_netdev_command {
 	/* Set or clear a bpf program used in the earliest stages of packet
 	 * rx. The prog will have been loaded as BPF_PROG_TYPE_XDP. The callee
 	 * is responsible for calling bpf_prog_put on any old progs that are
@@ -811,12 +814,15 @@ enum xdp_netdev_command {
 	 * is equivalent to XDP_ATTACHED_DRV.
 	 */
 	XDP_QUERY_PROG,
+	/* BPF program for offload callbacks, invoked at program load time. */
+	BPF_OFFLOAD_MAP_ALLOC,
+	BPF_OFFLOAD_MAP_FREE,
 };
 
 struct netlink_ext_ack;
 
-struct netdev_xdp {
-	enum xdp_netdev_command command;
+struct netdev_bpf {
+	enum bpf_netdev_command command;
 	union {
 		/* XDP_SETUP_PROG */
 		struct {
@@ -828,6 +834,10 @@ struct netdev_xdp {
 		struct {
 			u8 prog_attached;
 			u32 prog_id;
+		};
+		/* BPF_OFFLOAD_MAP_ALLOC, BPF_OFFLOAD_MAP_FREE */
+		struct {
+			struct bpf_offloaded_map *offmap;
 		};
 	};
 };
@@ -1162,9 +1172,9 @@ struct macsec_ops {
  *	appropriate rx headroom value allows avoiding skb head copy on
  *	forward. Setting a negative value resets the rx headroom to the
  *	default value.
- * int (*ndo_xdp)(struct net_device *dev, struct netdev_xdp *xdp);
+ * int (*ndo_bpf)(struct net_device *dev, struct netdev_bpf *xdp);
  *	This function is used to set or query state related to XDP on the
- *	netdevice. See definition of enum xdp_netdev_command for details.
+ *	netdevice. See definition of enum bpf_netdev_command for details.
  * int (*ndo_xdp_xmit)(struct net_device *dev, struct xdp_buff *xdp);
  *	This function is used to submit a XDP packet for transmit on a
  *	netdevice.
@@ -1352,10 +1362,11 @@ struct net_device_ops {
 						       struct sk_buff *skb);
 	void			(*ndo_set_rx_headroom)(struct net_device *dev,
 						       int needed_headroom);
-	int			(*ndo_xdp)(struct net_device *dev,
-					   struct netdev_xdp *xdp);
-	int			(*ndo_xdp_xmit)(struct net_device *dev,
-						struct xdp_buff *xdp);
+	int			(*ndo_bpf)(struct net_device *dev,
+					   struct netdev_bpf *xdp);
+	int			(*ndo_xdp_xmit)(struct net_device *dev, int n,
+						struct xdp_frame **xdp,
+						u32 flags);
 	void			(*ndo_xdp_flush)(struct net_device *dev);
 };
 
@@ -1863,6 +1874,8 @@ struct net_device {
 #endif
 	unsigned int		tx_queue_len;
 	spinlock_t		tx_global_lock;
+
+	struct xdp_dev_bulk_queue __percpu *xdp_bulkq;
 	int			watchdog_timeo;
 
 #ifdef CONFIG_XPS
@@ -3398,7 +3411,7 @@ struct sk_buff *validate_xmit_skb_list(struct sk_buff *skb, struct net_device *d
 struct sk_buff *dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 				    struct netdev_queue *txq, int *ret);
 
-typedef int (*xdp_op_t)(struct net_device *dev, struct netdev_xdp *xdp);
+typedef int (*xdp_op_t)(struct net_device *dev, struct netdev_bpf *xdp);
 int bpf_xdp_link_attach(const union bpf_attr *attr, struct bpf_prog *prog);
 int dev_change_xdp_fd(struct net_device *dev, struct netlink_ext_ack *extack,
 		      int fd, u32 flags);

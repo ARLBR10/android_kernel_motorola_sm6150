@@ -4603,7 +4603,7 @@ int netif_receive_skb_core(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(netif_receive_skb_core);
 
-static int generic_xdp_install(struct net_device *dev, struct netdev_xdp *xdp)
+static int generic_xdp_install(struct net_device *dev, struct netdev_bpf *xdp)
 {
 	struct bpf_prog *old = rtnl_dereference(dev->xdp_prog);
 	struct bpf_prog *new = xdp->prog;
@@ -7164,7 +7164,7 @@ EXPORT_SYMBOL(dev_change_proto_down);
 
 u8 __dev_xdp_attached(struct net_device *dev, xdp_op_t xdp_op, u32 *prog_id)
 {
-	struct netdev_xdp xdp;
+	struct netdev_bpf xdp;
 
 	memset(&xdp, 0, sizeof(xdp));
 	xdp.command = XDP_QUERY_PROG;
@@ -7181,7 +7181,7 @@ static int dev_xdp_install(struct net_device *dev, xdp_op_t xdp_op,
 			   struct netlink_ext_ack *extack, u32 flags,
 			   struct bpf_prog *prog)
 {
-	struct netdev_xdp xdp;
+	struct netdev_bpf xdp;
 
 	memset(&xdp, 0, sizeof(xdp));
 	if (flags & XDP_FLAGS_HW_MODE)
@@ -7229,7 +7229,7 @@ int dev_change_xdp_fd(struct net_device *dev, struct netlink_ext_ack *extack,
 
 	ASSERT_RTNL();
 
-	xdp_op = xdp_chk = ops->ndo_xdp;
+	xdp_op = xdp_chk = ops->ndo_bpf;
 	if (!xdp_op && (flags & (XDP_FLAGS_DRV_MODE | XDP_FLAGS_HW_MODE)))
 		return -EOPNOTSUPP;
 	if (!xdp_op || (flags & XDP_FLAGS_SKB_MODE))
@@ -8364,6 +8364,8 @@ void free_netdev(struct net_device *dev)
 
 	free_percpu(dev->pcpu_refcnt);
 	dev->pcpu_refcnt = NULL;
+	free_percpu(dev->xdp_bulkq);
+	dev->xdp_bulkq = NULL;
 
 	prog = rcu_dereference_protected(dev->xdp_prog, 1);
 	if (prog) {

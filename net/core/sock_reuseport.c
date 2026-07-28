@@ -12,7 +12,7 @@
 
 #define INIT_SOCKS 128
 
-static DEFINE_SPINLOCK(reuseport_lock);
+DEFINE_SPINLOCK(reuseport_lock);
 
 static struct sock_reuseport *__reuseport_alloc(unsigned int max_socks)
 {
