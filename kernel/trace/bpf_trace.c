@@ -818,7 +818,8 @@ __bpf_perf_event_output(struct pt_regs *regs, struct bpf_map *map,
 	if (unlikely(event->oncpu != cpu))
 		return -EOPNOTSUPP;
 
-	return perf_event_output(event, sd, regs);
+	perf_event_output(event, sd, regs);
+	return 0;
 }
 
 /*
@@ -969,12 +970,28 @@ struct send_signal_irq_work {
 
 static DEFINE_PER_CPU(struct send_signal_irq_work, send_signal_work);
 
+/*
+ * 4.14 has no PIDTYPE_TGID: __PIDTYPE_TGID exists but is documented as valid
+ * only for __task_pid_nr_ns(), and PIDTYPE_MAX sizes task->pids[], so neither
+ * may be reused as a delivery selector. Keep the upstream call shape and map
+ * the two cases onto 4.14's two functions.
+ */
+#define BPF_SIG_TO_THREAD_GROUP	PIDTYPE_MAX
+
+static int bpf_send_sig_by_type(int sig, struct task_struct *task,
+				enum pid_type type)
+{
+	if (type == PIDTYPE_PID)
+		return send_sig_info(sig, SEND_SIG_PRIV, task);
+	return group_send_sig_info(sig, SEND_SIG_PRIV, task);
+}
+
 static void do_bpf_send_signal(struct irq_work *entry)
 {
 	struct send_signal_irq_work *work;
 
 	work = container_of(entry, struct send_signal_irq_work, irq_work);
-	group_send_sig_info(work->sig, SEND_SIG_PRIV, work->task, work->type);
+	bpf_send_sig_by_type(work->sig, work->task, work->type);
 }
 
 static int bpf_send_signal_common(u32 sig, enum pid_type type)
@@ -1018,12 +1035,12 @@ static int bpf_send_signal_common(u32 sig, enum pid_type type)
 		return 0;
 	}
 
-	return group_send_sig_info(sig, SEND_SIG_PRIV, current, type);
+	return bpf_send_sig_by_type(sig, current, type);
 }
 
 BPF_CALL_1(bpf_send_signal, u32, sig)
 {
-	return bpf_send_signal_common(sig, PIDTYPE_TGID);
+	return bpf_send_signal_common(sig, BPF_SIG_TO_THREAD_GROUP);
 }
 
 static const struct bpf_func_proto bpf_send_signal_proto = {

@@ -47,6 +47,14 @@ probe_write_common(void __user *dst, const void *src, size_t size)
 long __weak probe_kernel_read(void *dst, const void *src, size_t size)
     __attribute__((alias("__probe_kernel_read")));
 
+/*
+ * Same as probe_kernel_read(), except on architectures with non-overlapping
+ * user and kernel address ranges, where the _strict variant additionally
+ * returns -EFAULT for a user address. arm64 overlaps, so this is an alias.
+ */
+long __weak probe_kernel_read_strict(void *dst, const void *src, size_t size)
+    __attribute__((alias("__probe_kernel_read")));
+
 long __probe_kernel_read(void *dst, const void *src, size_t size)
 {
 	long ret;
@@ -157,7 +165,15 @@ EXPORT_SYMBOL_GPL(probe_user_write);
  * If @count is smaller than the length of the string, copies @count-1 bytes,
  * sets the last byte of @dst buffer to NUL and returns @count.
  */
-long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count)
+long __weak strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count)
+    __attribute__((alias("__strncpy_from_unsafe")));
+
+/* See probe_kernel_read_strict() for why this is an alias here. */
+long __weak strncpy_from_unsafe_strict(char *dst, const void *unsafe_addr,
+				       long count)
+    __attribute__((alias("__strncpy_from_unsafe")));
+
+long __strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count)
 {
 	mm_segment_t old_fs = get_fs();
 	const void *src = unsafe_addr;
@@ -198,6 +214,10 @@ long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count)
  * If @count is smaller than the length of the string, copies @count-1 bytes,
  * sets the last byte of @dst buffer to NUL and returns @count.
  */
+long strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
+			       long count)
+    __attribute__((alias("strncpy_from_unsafe_user")));
+
 long strncpy_from_unsafe_user(char *dst, const void __user *unsafe_addr,
 			      long count)
 {
