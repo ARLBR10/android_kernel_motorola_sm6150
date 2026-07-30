@@ -1132,6 +1132,11 @@ static inline bool bpf_prog_ebpf_jited(const struct bpf_prog *fp)
 	return false;
 }
 
+static inline bool bpf_jit_blinding_enabled(struct bpf_prog *prog)
+{
+	return false;
+}
+
 static inline int
 bpf_jit_add_poke_descriptor(struct bpf_prog *prog,
 			    struct bpf_jit_poke_descriptor *poke)
