@@ -18,8 +18,11 @@ $(eval $(call config_filename,SYSTEM_TRUSTED_KEYS))
 # GCC doesn't include .incbin files in -MD generated dependencies (PR#66871)
 $(obj)/system_certificates.o: $(obj)/x509_certificate_list
 
-# Cope with signing_key.x509 existing in $(srctree) not $(objtree)
-AFLAGS_system_certificates.o := -I$(srctree)
+# Cope with signing_key.x509 existing in $(srctree) not $(objtree). Compiler
+# caches do not track .incbin inputs, so include its hash in the command key.
+# Keep this recursively expanded because the certificate is generated later.
+AFLAGS_system_certificates.o = -I$(srctree) \
+	-DSYSTEM_CERTIFICATE_KEY_SHA256=$(shell sha256sum $(obj)/signing_key.x509 | cut -d' ' -f1)
 
 quiet_cmd_extract_certs  = EXTRACT_CERTS   $(patsubst "%",%,$(2))
       cmd_extract_certs  = scripts/extract-cert $(2) $@ || ( rm $@; exit 1)
