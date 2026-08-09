@@ -19,9 +19,11 @@
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/bitops.h>
+#include <linux/bitmap.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#include <linux/close_range.h>
 #include <linux/workqueue.h>
 
 unsigned int sysctl_nr_open __read_mostly = 1024*1024;
@@ -617,31 +619,102 @@ void fd_install(unsigned int fd, struct file *file)
 
 EXPORT_SYMBOL(fd_install);
 
-/*
- * The same warnings as for __alloc_fd()/__fd_install() apply here...
- */
-int __close_fd(struct files_struct *files, unsigned fd)
+static struct file *pick_file(struct files_struct *files, unsigned int fd)
 {
 	struct file *file;
 	struct fdtable *fdt;
 
 	spin_lock(&files->file_lock);
 	fdt = files_fdtable(files);
-	if (fd >= fdt->max_fds)
+	if (fd >= fdt->max_fds) {
+		file = ERR_PTR(-EINVAL);
 		goto out_unlock;
+	}
 	fd = array_index_nospec(fd, fdt->max_fds);
 	file = fdt->fd[fd];
-	if (!file)
+	if (!file) {
+		file = ERR_PTR(-EBADF);
 		goto out_unlock;
+	}
 	rcu_assign_pointer(fdt->fd[fd], NULL);
 	__clear_close_on_exec(fd, fdt);
 	__put_unused_fd(files, fd);
-	spin_unlock(&files->file_lock);
-	return filp_close(file, files);
 
 out_unlock:
 	spin_unlock(&files->file_lock);
-	return -EBADF;
+	return file;
+}
+
+/*
+ * The same warnings as for __alloc_fd()/__fd_install() apply here...
+ */
+int __close_fd(struct files_struct *files, unsigned fd)
+{
+	struct file *file = pick_file(files, fd);
+
+	if (IS_ERR(file))
+		return -EBADF;
+
+	return filp_close(file, files);
+}
+
+static void __range_cloexec(struct files_struct *files, unsigned int fd,
+			    unsigned int max_fd)
+{
+	struct fdtable *fdt;
+
+	spin_lock(&files->file_lock);
+	fdt = files_fdtable(files);
+	max_fd = min(fdt->max_fds - 1, max_fd);
+	if (fd <= max_fd)
+		bitmap_set(fdt->close_on_exec, fd, max_fd - fd + 1);
+	spin_unlock(&files->file_lock);
+}
+
+static void __range_close(struct files_struct *files, unsigned int fd,
+			  unsigned int max_fd)
+{
+	while (fd <= max_fd) {
+		struct file *file = pick_file(files, fd++);
+
+		if (!IS_ERR(file)) {
+			filp_close(file, files);
+			cond_resched();
+			continue;
+		}
+
+		if (PTR_ERR(file) == -EINVAL)
+			break;
+	}
+}
+
+int __close_range(unsigned int fd, unsigned int max_fd, unsigned int flags)
+{
+	struct files_struct *displaced = NULL;
+	struct files_struct *files;
+	int ret;
+
+	if (flags & ~(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC))
+		return -EINVAL;
+	if (fd > max_fd)
+		return -EINVAL;
+
+	if (flags & CLOSE_RANGE_UNSHARE) {
+		ret = unshare_files(&displaced);
+		if (ret)
+			return ret;
+	}
+
+	files = current->files;
+	if (flags & CLOSE_RANGE_CLOEXEC)
+		__range_cloexec(files, fd, max_fd);
+	else
+		__range_close(files, fd, max_fd);
+
+	if (displaced)
+		put_files_struct(displaced);
+
+	return 0;
 }
 
 void do_close_on_exec(struct files_struct *files)
